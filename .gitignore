@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.pkl
+data/weather_cache/*
+!data/weather_cache/*_previous_runs.parquet

@@ -1,0 +1,16 @@
+{
+  "turbine_1": {
+    "source_file": "data/Dataset_HackAlemAI_для_участников_11_03_2023_28_02_2026_turbine.xlsx",
+    "maps_link": "https://maps.app.goo.gl/iN6svMt69D5qRpFU9",
+    "lat": 43.643194,
+    "lon": 78.538833,
+    "note": "Coordinates used by the deterministic weather client"
+  },
+  "turbine_2": {
+    "source_file": "data/Dataset HackAlemAI для участников 11.03.2023-28.02.2026 - turbine 2.csv",
+    "maps_link": "https://maps.app.goo.gl/8UQMwsYavY6nLvFY8",
+    "lat": 43.645139,
+    "lon": 78.535611,
+    "note": "Coordinates used by the deterministic weather client"
+  }
+}

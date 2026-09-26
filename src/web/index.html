@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="ru" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXCEL Wind AI · Диспетчерская консоль прогнозирования ВЭС</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        canvasBg: '#F8FAFC',
+                        surfaceCard: '#FFFFFF',
+                        surfaceSubtle: '#F1F5F9',
+                        surfaceHighlight: '#E2E8F0',
+                        borderLight: '#E2E8F0',
+                        borderFocus: '#CBD5E1',
+                        brandBlue: '#2563EB',
+                        brandBlueHover: '#1D4ED8',
+                        brandBlueSubtle: '#EFF6FF',
+                        brandBlueBorder: '#BFDBFE',
+                        textPrimary: '#0F172A',
+                        textSecondary: '#64748B',
+                        textMuted: '#94A3B8',
+                        accentEmerald: '#059669',
+                        accentAmber: '#D97706',
+                        chatDarkBg: '#11161D',
+                        chatDarkCard: '#151B23',
+                        chatDarkInput: '#0F141B',
+                        chatDarkBorder: '#252C36',
+                        chatAccentOrange: '#F97316',
+                        chatAccentOrangeHover: '#EA580C'
+                    },
+                    boxShadow: {
+                        'xs': '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
+                        'card': '0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02)',
+                        'subtle-hover': '0 4px 12px 0 rgba(15, 23, 42, 0.06)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+        html, body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #F8FAFC;
+            color: #0F172A;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .font-mono-code {
+            font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-feature-settings: "tnum";
+            font-variant-numeric: tabular-nums;
+        }
+
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.03); }
+        ::-webkit-scrollbar-thumb { background: #94A3B8; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748B; }
+
+        .chat-md code { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; background: #0F141B; padding: 0 4px; border-radius: 4px; }
+        .chat-md ul { list-style: none; padding-left: 4px; margin: 4px 0; }
+        .chat-md li { display: flex; gap: 8px; }
+        .chat-md li::before { content: "•"; color: #94A3B8; }
+    </style>
+</head>
+<body class="p-2.5 sm:p-3 lg:p-3.5 min-h-screen lg:h-screen lg:max-h-screen flex flex-col justify-between overflow-x-hidden">
+
+    <div class="max-w-[1840px] w-full mx-auto flex-1 flex flex-col min-h-0 space-y-2.5">
+
+        <!-- 1. ВЕРХНЯЯ ПАНЕЛЬ И TIME-MACHINE -->
+        <header class="bg-surfaceCard border border-borderLight rounded-xl px-3.5 py-2 flex flex-wrap items-center justify-between gap-2.5 shadow-card shrink-0">
+
+            <!-- Логотип и переключатель турбин (мощность не суммируется) -->
+            <div class="flex items-center gap-3">
+                <div class="w-7 h-7 rounded-lg bg-brandBlue flex items-center justify-center text-white font-bold text-xs shadow-xs">⚡</div>
+                <span class="text-sm font-bold tracking-tight text-textPrimary">NEXCEL Wind AI</span>
+                <div class="flex items-center bg-surfaceSubtle p-0.5 rounded-lg border border-borderLight text-xs font-semibold ml-1">
+                    <button id="nav-tab-1" onclick="setTurbine(1)" class="px-3 py-1 rounded-md transition-all">Турбина 1</button>
+                    <button id="nav-tab-2" onclick="setTurbine(2)" class="px-3 py-1 rounded-md transition-all">Турбина 2</button>
+                </div>
+            </div>
+
+            <!-- Центр: дата выпуска (issue date) -->
+            <div class="flex items-center gap-2 bg-surfaceSubtle/70 px-2.5 py-1 rounded-lg border border-borderLight">
+                <span class="text-[10px] uppercase font-bold tracking-wider text-textMuted">Выпуск:</span>
+                <span class="text-xs font-mono-code font-bold text-textPrimary min-w-[110px]" id="slice-label">2026-01-31 (D)</span>
+                <div class="flex items-center gap-1 mx-1">
+                    <button id="play-btn" onclick="togglePlay()" class="bg-surfaceCard hover:bg-surfaceHighlight text-textPrimary border border-borderLight px-2 py-0.5 rounded text-xs font-medium transition-all flex items-center gap-1 shadow-xs">
+                        <span id="play-icon" class="text-brandBlue text-[10px]">▶</span>
+                        <span id="play-text" class="text-xs">Play</span>
+                    </button>
+                    <button onclick="stepDay(1)" class="bg-surfaceCard hover:bg-surfaceHighlight text-textPrimary border border-borderLight px-2 py-0.5 rounded text-xs font-medium transition-all shadow-xs" title="Следующая дата выпуска">+24ч</button>
+                    <button onclick="resetDay()" class="text-textMuted hover:text-textPrimary px-1 text-xs" title="Сброс на 2026-01-31">↺</button>
+                </div>
+                <div class="flex items-center gap-1.5 pl-1.5 border-l border-borderLight">
+                    <span class="text-[10px] font-mono-code text-textMuted">31.01</span>
+                    <input type="range" id="time-slider" min="0" max="27" value="0" step="1" oninput="onSliderInput(this.value)" onchange="runForecast()" class="w-24 sm:w-32 lg:w-40 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-brandBlue">
+                    <span class="text-[10px] font-mono-code text-textMuted">27.02</span>
+                </div>
+            </div>
+
+            <!-- Справа: источник погоды, обновление и экспорт -->
+            <div class="flex items-center gap-2">
+                <div class="text-[11px] font-mono-code text-slate-500 bg-surfaceSubtle px-2 py-1 rounded border border-borderLight hidden sm:block" id="weather-source">ECMWF IFS · UTC</div>
+                <button onclick="checkUpdate()" class="text-xs bg-surfaceCard hover:bg-surfaceSubtle text-textSecondary hover:text-brandBlue px-2.5 py-1 rounded-md border border-borderLight transition-all font-medium shadow-xs" title="Заново скачать погоду и пересчитать, если она изменилась">
+                    ⟳ Погода
+                </button>
+                <div class="flex items-center gap-1">
+                    <button onclick="exportForecast('csv')" class="text-xs bg-surfaceCard hover:bg-surfaceSubtle text-textSecondary hover:text-brandBlue px-2.5 py-1 rounded-md border border-borderLight transition-all font-medium shadow-xs">CSV</button>
+                    <button onclick="exportForecast('json')" class="text-xs bg-surfaceCard hover:bg-surfaceSubtle text-textSecondary hover:text-brandBlue px-2.5 py-1 rounded-md border border-borderLight transition-all font-medium shadow-xs">JSON</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 2. ОСНОВНОЙ ЭКРАН (ГРАФИК + AI ASSISTANT) -->
+        <main class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0">
+
+            <!-- ЛЕВАЯ КОЛОНКА: ГРАФИК (8 из 12) -->
+            <div class="lg:col-span-8 bg-surfaceCard border border-borderLight rounded-xl p-3 sm:p-4 flex flex-col justify-between shadow-card h-full min-h-0">
+
+                <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-borderLight shrink-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-brandBlue"></span>
+                        <h2 class="text-xs font-bold uppercase tracking-wider text-textPrimary">Профиль мощности турбины (нормализованный, 0..1 p.u.)</h2>
+                        <span id="chart-subhead-badge" class="text-[11px] font-mono-code text-textSecondary bg-surfaceSubtle px-2 py-0.5 rounded border border-borderLight">Турбина 1 · 48 ч (UTC)</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <div class="flex items-center bg-surfaceSubtle p-0.5 rounded-md border border-borderLight text-[10px] font-mono-code font-semibold">
+                            <button id="horizon-24" onclick="setHorizon(24)" class="px-2 py-0.5 rounded transition-all">24 ч</button>
+                            <button id="horizon-48" onclick="setHorizon(48)" class="px-2 py-0.5 rounded transition-all">48 ч</button>
+                        </div>
+                        <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-mono-code">D: Дата выпуска</span>
+                        <span id="window-badge" class="px-2 py-0.5 rounded bg-blue-50 text-brandBlue border border-blue-200 text-[10px] font-mono-code font-semibold">D+1..D+2: Окно генерации</span>
+                    </div>
+                </div>
+
+                <div class="relative w-full flex-1 min-h-[350px] my-1.5 bg-surfaceCard rounded-lg overflow-hidden">
+                    <div id="plotly-dual-chart" class="w-full h-full"></div>
+                    <div id="chart-loader" class="hidden absolute inset-0 bg-white/85 backdrop-blur-xs flex flex-col items-center justify-center gap-2 z-20">
+                        <div class="w-6 h-6 border-2 border-brandBlue border-t-transparent rounded-full animate-spin"></div>
+                        <span class="text-xs font-medium text-textSecondary" id="chart-loader-text">Расчёт прогноза LightGBM &amp; ECMWF IFS (UTC)...</span>
+                    </div>
+                    <div id="chart-error" class="hidden absolute inset-0 bg-white flex flex-col items-center justify-center gap-2 z-10 px-6 text-center">
+                        <span class="text-rose-500 text-lg">✗</span>
+                        <span class="text-xs font-bold text-textPrimary" id="chart-error-title">Прогноз не построен</span>
+                        <span class="text-[11px] font-mono-code text-textSecondary max-w-xl break-words" id="chart-error-detail"></span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-borderLight shrink-0">
+                    <div class="bg-surfaceSubtle/70 border border-borderLight rounded-lg px-3 py-1.5 flex flex-col justify-between">
+                        <div class="text-[10px] font-bold uppercase tracking-wider text-textMuted">Выпуск · Горизонт</div>
+                        <div class="text-xs sm:text-sm font-bold text-textPrimary font-mono-code mt-0.5" id="kpi-issue-horizon">—</div>
+                    </div>
+                    <div class="bg-surfaceSubtle/70 border border-borderLight rounded-lg px-3 py-1.5 flex flex-col justify-between">
+                        <div class="text-[10px] font-bold uppercase tracking-wider text-textMuted">Статус пайплайна</div>
+                        <div class="flex items-center gap-1.5 mt-0.5">
+                            <span class="w-2 h-2 rounded-full bg-slate-300" id="kpi-status-dot"></span>
+                            <span class="text-xs sm:text-sm font-bold text-textPrimary font-mono-code" id="kpi-status-text">—</span>
+                            <span class="text-[10px] text-textMuted font-mono-code ml-auto" id="kpi-mae">MAE: —</span>
+                        </div>
+                    </div>
+                    <div class="bg-surfaceSubtle/70 border border-borderLight rounded-lg px-3 py-1.5 flex flex-col justify-between">
+                        <div class="text-[10px] font-bold uppercase tracking-wider text-textMuted">Средн. выработка</div>
+                        <div class="flex items-baseline justify-between mt-0.5">
+                            <span class="text-xs sm:text-sm font-bold text-textPrimary font-mono-code" id="kpi-avg-power">—</span>
+                            <span class="text-[10px] font-mono-code text-brandBlue" id="kpi-avg-percent"></span>
+                        </div>
+                    </div>
+                    <div class="bg-surfaceSubtle/70 border border-borderLight rounded-lg px-3 py-1.5 flex flex-col justify-between">
+                        <div class="text-[10px] font-bold uppercase tracking-wider text-textMuted">Пик мощности</div>
+                        <div class="flex items-baseline justify-between mt-0.5">
+                            <span class="text-xs sm:text-sm font-bold text-brandBlue font-mono-code" id="kpi-peak-power">—</span>
+                            <span class="text-[10px] text-textSecondary font-mono-code" id="kpi-peak-time"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ПРАВАЯ КОЛОНКА: AI ASSISTANT -->
+            <div class="lg:col-span-4 bg-[#11161D] text-[#F1F5F9] border border-[#252C36] rounded-xl p-3 sm:p-3.5 flex flex-col justify-between shadow-card h-full min-h-[500px] lg:min-h-0">
+
+                <div class="border-b border-[#252C36] pb-2 flex items-center justify-between shrink-0">
+                    <div>
+                        <h3 class="text-sm font-bold tracking-tight text-white flex items-center gap-2">
+                            AI Assistant
+                            <span id="llm-badge" class="text-[9px] font-mono-code font-semibold px-1.5 py-0.5 rounded border border-[#252C36] text-[#94A3B8]">LLM …</span>
+                        </h3>
+                        <p class="text-[11px] text-[#94A3B8]">Спросите о прогнозе, погоде или состоянии турбины</p>
+                    </div>
+                    <div class="flex items-center gap-2 text-[#94A3B8]">
+                        <button onclick="shareState()" title="Скопировать ссылку на текущее состояние" class="hover:text-white transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                        </button>
+                        <button onclick="clearChatHistory()" title="Очистить историю" class="hover:text-white transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                        <button onclick="copyChatContext()" title="Копировать сводку прогноза" class="hover:text-white transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="chat-messages-container" class="flex-1 overflow-y-auto space-y-3 py-2 pr-1 min-h-0 text-xs">
+                    <!-- Карточка последнего прогноза: всегда первая, обновляется при каждом расчёте -->
+                    <div id="forecast-card" class="bg-[#151B23] border border-[#252C36] rounded-xl p-3 text-[#F1F5F9] leading-relaxed shadow-xs">
+                        <div class="text-[#94A3B8]">Строю прогноз…</div>
+                    </div>
+                </div>
+
+                <div class="pt-2 border-t border-[#252C36] space-y-2 shrink-0">
+                    <div class="grid grid-cols-3 gap-1.5 text-[11px]">
+                        <button onclick="quickAction(24)" class="bg-[#151B23] hover:bg-[#252C36] text-[#CBD5E1] hover:text-white py-1.5 px-1 rounded-full border border-[#252C36] text-center transition-all truncate">Прогноз на 24 часа</button>
+                        <button onclick="quickAction(48)" class="bg-[#151B23] hover:bg-[#252C36] text-[#CBD5E1] hover:text-white py-1.5 px-1 rounded-full border border-[#252C36] text-center transition-all truncate">Прогноз на 48 часов</button>
+                        <button onclick="quickAction('model')" class="bg-[#151B23] hover:bg-[#252C36] text-[#CBD5E1] hover:text-white py-1.5 px-1 rounded-full border border-[#252C36] text-center transition-all truncate">Состояние модели</button>
+                    </div>
+                    <form onsubmit="handleChatSubmit(event)" class="flex items-center gap-2">
+                        <input type="text" id="chat-user-input" placeholder="Спросите о прогнозе ВЭС..." autocomplete="off"
+                               class="flex-1 w-full bg-[#0F141B] border border-[#252C36] rounded-xl px-3 py-2 text-xs text-[#F1F5F9] placeholder:text-[#64748B] focus:outline-none focus:border-[#F97316] font-medium transition-all" />
+                        <button type="submit" id="chat-send" class="bg-[#F97316] hover:bg-[#EA580C] disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-xs transition-all shrink-0">Отправить</button>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="toast-notify" class="fixed bottom-4 right-4 hidden bg-surfaceCard border border-borderLight text-textPrimary text-xs px-3.5 py-2 rounded-lg shadow-subtle-hover z-50 flex items-center gap-2">
+        <span class="font-bold" id="toast-icon">✓</span>
+        <span id="toast-message" class="font-medium"></span>
+    </div>
+
+    <script>
+        // Две турбины, мощность не суммируется. Цвета не пересекаются с цветом ошибок.
+        const TURBINE_COLORS = { 1: '#2563EB', 2: '#059669' };
+        const STAGE_NAMES = {
+            context: 'Контекст и модель', weather: 'Погода', features: 'Признаки',
+            model: 'Модель', validation: 'Проверка', weather_update: 'Обновление погоды'
+        };
+        const FIRST_ISSUE = Date.UTC(2026, 0, 31);
+        const LAST_OFFSET = 27;
+
+        const state = {
+            turbine: 1,
+            horizon: 48,
+            dayOffset: 0,
+            payload: null,   // последний ответ /api/forecast | /api/update | /api/chat
+            history: [],     // диалог для LLM (только текст)
+            busy: false,
+            playing: false
+        };
+
+        // ---------- helpers ----------
+        const $ = id => document.getElementById(id);
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m]);
+        }
+
+        function issueDateStr(offset = state.dayOffset) {
+            return new Date(FIRST_ISSUE + offset * 86400000).toISOString().slice(0, 10);
+        }
+
+        function offsetFromDate(dateStr) {
+            return Math.round((Date.parse(dateStr + 'T00:00:00Z') - FIRST_ISSUE) / 86400000);
+        }
+
+        function fmtUtc(iso) {  // "2026-02-01T15:00:00+00:00" -> "2026-02-01 15:00"
+            return iso.slice(0, 16).replace('T', ' ');
+        }
+
+        function fmtWindow(win) {  // "a .. b" (ISO) -> "2026-02-01 00:00 .. 2026-02-02 23:00 UTC"
+            const [a, b] = win.split(' .. ');
+            return `${fmtUtc(a)} .. ${fmtUtc(b)} UTC`;
+        }
+
+        // Безопасный мини-markdown для ответов LLM: жирный, код, списки, переносы.
+        function renderMarkdown(text) {
+            const lines = escapeHtml(text).split('\n');
+            let html = '', inList = false;
+            for (const raw of lines) {
+                const line = raw.replace(/\*\*(.+?)\*\*/g, '<b class="text-white">$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+                const item = line.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)$/);
+                const heading = line.match(/^\s*#{1,6}\s+(.*)$/);
+                if (heading) {
+                    if (inList) { html += '</ul>'; inList = false; }
+                    html += `<div class="mt-2 mb-0.5 font-bold text-white">${heading[1]}</div>`;
+                } else if (item) {
+                    if (!inList) { html += '<ul>'; inList = true; }
+                    html += `<li><span>${item[1]}</span></li>`;
+                } else {
+                    if (inList) { html += '</ul>'; inList = false; }
+                    html += line.trim() ? `<div>${line}</div>` : '<div class="h-1.5"></div>';
+                }
+            }
+            return html + (inList ? '</ul>' : '');
+        }
+
+        async function api(path, body) {
+            const response = await fetch(path, body === undefined ? {} : {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data);
+                throw new Error(`HTTP ${response.status}: ${detail}`);
+            }
+            return data;
+        }
+
+        function forecastRequest() {
+            return { issue_date: issueDateStr(), horizon_hours: state.horizon, turbine_ids: [state.turbine] };
+        }
+
+        // ---------- controls ----------
+        function paintControls() {
+            for (const t of [1, 2]) {
+                $(`nav-tab-${t}`).className = t === state.turbine
+                    ? 'px-3 py-1 rounded-md transition-all bg-surfaceCard text-brandBlue shadow-xs'
+                    : 'px-3 py-1 rounded-md transition-all text-textSecondary hover:text-textPrimary';
+            }
+            for (const h of [24, 48]) {
+                $(`horizon-${h}`).className = h === state.horizon
+                    ? 'px-2 py-0.5 rounded transition-all bg-surfaceCard text-brandBlue shadow-xs'
+                    : 'px-2 py-0.5 rounded transition-all text-textSecondary hover:text-textPrimary';
+            }
+            $('time-slider').value = state.dayOffset;
+            $('slice-label').innerText = `${issueDateStr()} (D)`;
+            $('window-badge').innerText = state.horizon === 24 ? 'D+1: Окно генерации' : 'D+1..D+2: Окно генерации';
+        }
+
+        function setTurbine(t) {
+            state.turbine = t;
+            paintControls();
+            runForecast();
+        }
+
+        function setHorizon(h) {
+            state.horizon = h;
+            paintControls();
+            return runForecast();
+        }
+
+        function onSliderInput(val) {
+            state.dayOffset = parseInt(val, 10);
+            paintControls();
+        }
+
+        function stepDay(days) {
+            state.dayOffset = state.dayOffset + days > LAST_OFFSET ? 0 : state.dayOffset + days;
+            paintControls();
+            return runForecast();
+        }
+
+        function resetDay() {
+            state.dayOffset = 0;
+            paintControls();
+            runForecast();
+        }
+
+        async function togglePlay() {
+            state.playing = !state.playing;
+            $('play-icon').innerText = state.playing ? '⏸' : '▶';
+            $('play-text').innerText = state.playing ? 'Пауза' : 'Play';
+            // Каждая дата выпуска — полный цикл агента; следующая стартует после завершения предыдущей.
+            while (state.playing && state.dayOffset < LAST_OFFSET) {
+                await stepDay(1);
+                await new Promise(resolve => setTimeout(resolve, 900));
+            }
+            if (state.playing) togglePlay();
+        }
+
+        // ---------- forecast ----------
+        async function runForecast(path = '/api/forecast') {
+            if (state.busy) return;
+            state.busy = true;
+            $('chart-loader').classList.remove('hidden');
+            $('chart-loader-text').innerText = path === '/api/update'
+                ? 'Проверка обновления погоды ECMWF IFS...'
+                : 'Расчёт прогноза LightGBM & ECMWF IFS (UTC)...';
+            try {
+                const payload = await api(path, forecastRequest());
+                render(payload);
+                return payload;
+            } catch (error) {
+                showToast(`Ошибка запроса: ${error.message}`, false);
+            } finally {
+                state.busy = false;
+                $('chart-loader').classList.add('hidden');
+            }
+        }
+
+        async function checkUpdate() {
+            const payload = await runForecast('/api/update');
+            const step = payload && payload.steps.find(s => s.stage === 'weather_update');
+            if (step) showToast(step.detail, step.status === 'ok');
+        }
+
+        function render(payload) {
+            const summary = payload.summary;
+            // Если прогноз пришёл из чата — синхронизируем контролы с ним.
+            if (!summary.turbine_ids.includes(state.turbine)) state.turbine = summary.turbine_ids[0];
+            state.horizon = summary.horizon_hours;
+            const offset = offsetFromDate(summary.issue_date);
+            if (offset >= 0 && offset <= LAST_OFFSET) state.dayOffset = offset;
+            state.payload = payload;
+            paintControls();
+
+            const points = payload.points.filter(p => p.turbine_id === state.turbine);
+            const stats = summary.turbines[`turbine_${state.turbine}`];
+            const failed = payload.steps.find(s => s.status === 'error');
+
+            renderChart(points, failed);
+            renderKpis(summary, stats);
+            renderForecastCard(payload, stats, failed);
+        }
+
+        function renderChart(points, failed) {
+            const chartDiv = $('plotly-dual-chart');
+            $('chart-error').classList.toggle('hidden', !failed);
+            if (failed) {
+                Plotly.purge(chartDiv);
+                $('chart-error-title').innerText = `Цикл остановлен на этапе «${STAGE_NAMES[failed.stage] || failed.stage}»`;
+                $('chart-error-detail').innerText = failed.detail;
+                return;
+            }
+            const x = points.map(p => fmtUtc(p.target_time));
+            const color = TURBINE_COLORS[state.turbine];
+            const traces = [
+                {
+                    x, y: points.map(p => p.predicted_power), name: `Турбина ${state.turbine} (p.u.)`,
+                    type: 'scatter', mode: 'lines+markers', line: { color, width: 2.2 }, marker: { size: 4, color },
+                    hovertemplate: '<b>%{y:.3f} p.u.</b><br>UTC: %{x}<extra></extra>', yaxis: 'y'
+                },
+                {
+                    x, y: points.map(p => p.wind_speed_100m), name: 'Ветер 100м (м/с)',
+                    type: 'scatter', mode: 'lines', line: { color: '#D97706', width: 1.6 },
+                    hovertemplate: 'Ветер: <b>%{y:.1f} м/с</b><extra></extra>', yaxis: 'y2'
+                },
+                {
+                    x, y: points.map(p => p.temperature_2m), name: 'Температура (°C)',
+                    type: 'scatter', mode: 'lines', line: { color: '#6366F1', width: 1.4 },
+                    hovertemplate: 'Темп: <b>%{y:.1f} °C</b><extra></extra>', yaxis: 'y3'
+                }
+            ];
+            const tick = { size: 9, family: 'JetBrains Mono' };
+            const layout = {
+                autosize: true, paper_bgcolor: '#FFFFFF', plot_bgcolor: '#FFFFFF',
+                margin: { l: 42, r: 42, t: 20, b: 24 }, showlegend: false, hovermode: 'x unified',
+                xaxis: { showgrid: false, tickfont: { ...tick, color: '#94A3B8' } },
+                yaxis: {
+                    domain: [0.36, 1.0], title: { text: 'Мощность (p.u.)', font: { color: '#0F172A', size: 10 } },
+                    range: [-0.02, 1.05], gridcolor: '#F1F5F9', zerolinecolor: '#E2E8F0', tickfont: { ...tick, color: '#64748B' }
+                },
+                yaxis2: {
+                    domain: [0.0, 0.28], title: { text: 'Ветер (м/с)', font: { color: '#D97706', size: 9 } },
+                    rangemode: 'tozero', gridcolor: '#F1F5F9', zerolinecolor: '#E2E8F0', tickfont: { ...tick, color: '#D97706' }
+                },
+                yaxis3: {
+                    overlaying: 'y2', side: 'right', title: { text: 'Темп. (°C)', font: { color: '#6366F1', size: 9 } },
+                    showgrid: false, zeroline: false, tickfont: { ...tick, color: '#6366F1' }
+                }
+            };
+            Plotly.react(chartDiv, traces, layout, { responsive: true, displayModeBar: false });
+        }
+
+        function renderKpis(summary, stats) {
+            const dotColor = { ok: 'bg-emerald-500', warn: 'bg-amber-500', error: 'bg-rose-500' }[summary.status];
+            const mae = summary.model && summary.model.validation_metrics && summary.model.validation_metrics.mae;
+            $('kpi-issue-horizon').innerText = `${summary.issue_date} · ${summary.horizon_hours} ч`;
+            $('kpi-status-dot').className = `w-2 h-2 rounded-full ${dotColor}`;
+            $('kpi-status-text').innerText = summary.status;
+            $('kpi-mae').innerText = mae !== undefined && mae !== null ? `MAE: ${mae.toFixed(3)}` : 'MAE: —';
+            $('kpi-avg-power').innerText = stats ? `${stats.mean_power.toFixed(3)} p.u.` : '—';
+            $('kpi-avg-percent').innerText = stats ? `${(stats.mean_power * 100).toFixed(1)}%` : '';
+            $('kpi-peak-power').innerText = stats ? `${stats.peak_power.toFixed(3)} p.u.` : '—';
+            $('kpi-peak-time').innerText = stats ? `${fmtUtc(stats.peak_time_utc).slice(5)} UTC` : '';
+            $('chart-subhead-badge').innerText = `Турбина ${state.turbine} · ${summary.horizon_hours} ч (UTC)`;
+        }
+
+        function bullet(label, value) {
+            return `<div class="flex items-start gap-2"><span class="text-[#94A3B8]">•</span><div><b class="text-white">${label}:</b> ${value}</div></div>`;
+        }
+
+        function renderForecastCard(payload, stats, failed) {
+            const s = payload.summary;
+            const statusLabel = { ok: '<span class="text-emerald-400 font-semibold">ok</span>',
+                                  warn: '<span class="text-amber-400 font-semibold">предупреждение (warn)</span>',
+                                  error: '<span class="text-rose-400 font-semibold">ошибка (error)</span>' }[s.status];
+
+            const steps = payload.steps.map(step => {
+                const warnValidation = step.stage === 'validation' && s.status === 'warn';
+                const [icon, color] = step.status === 'error' ? ['✗', 'text-rose-400']
+                    : warnValidation ? ['⚠', 'text-amber-400'] : ['✓', 'text-emerald-400'];
+                return `<div class="${color} font-mono-code">${icon} ${STAGE_NAMES[step.stage] || step.stage}: ${escapeHtml(step.detail)} <span class="text-[#94A3B8]">(${step.ms} ms)</span></div>`;
+            }).join('');
+
+            const checks = s.checks.map(c => {
+                const color = c.status === 'warn' ? 'text-amber-400' : 'text-[#94A3B8]';
+                return `<div class="${color}">${c.status === 'warn' ? '⚠' : 'ℹ'} <span class="font-mono-code">${escapeHtml(c.name)}</span> — ${escapeHtml(c.detail)}</div>`;
+            }).join('');
+
+            const vsIssue = s.changes && (s.changes.vs_previous_issue !== undefined ? s.changes.vs_previous_issue : s.changes);
+            const vsRun = s.changes && s.changes.vs_previous_run;
+            const changes = [
+                vsRun ? bullet('Δ к прошлому расчёту', `<span class="font-mono-code">средн. |Δ| ${vsRun.mean_abs_diff}, макс. ${vsRun.max_abs_diff}</span>`) : '',
+                vsIssue && vsIssue.against ? bullet(`Δ к ${escapeHtml(vsIssue.against)}`, `<span class="font-mono-code">средн. |Δ| ${vsIssue.mean_abs_diff}, макс. ${vsIssue.max_abs_diff} (${vsIssue.hours_compared} ч)</span>`) : ''
+            ].join('');
+
+            const turbineBlock = stats ? `
+                <div class="mt-3 pt-2.5 border-t border-[#252C36]">
+                    <div class="font-bold text-white mb-1.5">Прогноз по турбине ${state.turbine}:</div>
+                    <div class="space-y-1.5 pl-1">
+                        ${bullet('Средняя мощность', `<span class="font-mono-code">${stats.mean_power.toFixed(3)}</span>`)}
+                        ${bullet('Пиковая мощность', `<span class="font-mono-code">${stats.peak_power.toFixed(3)}</span>`)}
+                        ${bullet('Время пика', `<span class="font-mono-code">${fmtUtc(stats.peak_time_utc)} UTC</span>`)}
+                        ${bullet('Средняя скорость ветра на высоте 100 м', `<span class="font-mono-code">${stats.mean_wind_100m_ms} м/с</span>`)}
+                        ${bullet('Мин. температура', `<span class="font-mono-code">${stats.min_temperature_c} °C</span>`)}
+                    </div>
+                </div>` : '';
+
+            $('forecast-card').innerHTML = `
+                <div class="text-[#CBD5E1] mb-2 font-medium">Состояние последнего построенного прогноза:</div>
+                <div class="space-y-1.5 pl-1">
+                    ${bullet('Дата выпуска', `<span class="font-mono-code">${s.issue_date}</span>`)}
+                    ${bullet('Окно прогноза', `<span class="font-mono-code">${fmtWindow(s.forecast_window_utc)}</span>`)}
+                    ${bullet('Турбины', `<span class="font-mono-code">[${s.turbine_ids.join(', ')}]</span>`)}
+                    ${bullet('Статус', statusLabel)}
+                    ${changes}
+                </div>
+                <div class="mt-3 pt-2.5 border-t border-[#252C36] space-y-1 text-[11px]">
+                    <div class="text-[10px] uppercase font-bold tracking-wider text-[#94A3B8] mb-1">Этапы агента:</div>
+                    ${steps}
+                </div>
+                ${checks ? `<div class="mt-3 pt-2.5 border-t border-[#252C36] space-y-1 text-[11px]">
+                    <div class="text-[10px] uppercase font-bold tracking-wider text-[#94A3B8] mb-1">Проверки:</div>${checks}</div>` : ''}
+                ${turbineBlock}`;
+        }
+
+        // ---------- chat ----------
+        function addChatMessage(sender, html) {
+            const container = $('chat-messages-container');
+            const div = document.createElement('div');
+            div.className = 'chat-msg';
+            if (sender === 'user') {
+                div.classList.add('flex', 'justify-end');
+                div.innerHTML = `<div class="bg-[#252C36] text-white rounded-xl px-3 py-2 text-xs max-w-[85%] leading-relaxed">${html}</div>`;
+            } else {
+                div.className += ' chat-md bg-[#151B23] border border-[#252C36] rounded-xl p-3 text-[#F1F5F9] leading-relaxed shadow-xs';
+                div.innerHTML = html;
+            }
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            return div;
+        }
+
+        async function quickAction(action) {
+            if (action === 'model') {
+                addChatMessage('user', 'Состояние модели');
+                try {
+                    const st = await api('/api/status');
+                    const m = st.model;
+                    const metrics = m.validation_metrics || {};
+                    addChatMessage('bot', m.available ? `
+                        <b class="text-white">Модель:</b> <code>${escapeHtml(m.model_path)}</code> (${escapeHtml(m.objective || '—')})
+                        <ul>
+                            <li><span>Валидация (январь 2026): MAE <b class="text-white">${metrics.mae !== undefined ? metrics.mae.toFixed(3) : '—'}</b>, RMSE <b class="text-white">${metrics.rmse !== undefined ? metrics.rmse.toFixed(3) : '—'}</b></span></li>
+                            <li><span>Обучение до: <code>${escapeHtml(m.train_end_exclusive || '—')}</code>, валидация до: <code>${escapeHtml(m.validation_end_exclusive || '—')}</code></span></li>
+                            <li><span>Погода: ${escapeHtml(st.weather_source)}</span></li>
+                            <li><span>LLM: ${st.llm_available ? 'подключен' : 'выключен (демо-режим)'}</span></li>
+                        </ul>`
+                        : `<span class="text-rose-400 font-semibold">Модель недоступна:</span> ${escapeHtml(m.error)}`);
+                } catch (error) {
+                    addChatMessage('bot', `<span class="text-rose-400">${escapeHtml(error.message)}</span>`);
+                }
+                return;
+            }
+            // Прямой расчёт без LLM: те же данные, что на графике.
+            addChatMessage('user', action === 24 ? 'Прогноз на 24 часа' : 'Прогноз на 48 часов');
+            const payload = await setHorizon(action);
+            if (!payload) return;
+            const s = payload.summary;
+            const stats = s.turbines[`turbine_${state.turbine}`];
+            addChatMessage('bot', stats
+                ? `Прогноз от <b class="text-white">${s.issue_date}</b> на <b class="text-white">${s.horizon_hours} ч</b> (турбина ${state.turbine}): средняя <b class="text-white">${stats.mean_power.toFixed(3)} p.u.</b>, пик <b class="text-white">${stats.peak_power.toFixed(3)} p.u.</b> в ${fmtUtc(stats.peak_time_utc)} UTC. Статус: ${s.status}.`
+                : `<span class="text-rose-400">Прогноз не построен — см. этапы агента выше.</span>`);
+        }
+
+        async function handleChatSubmit(event) {
+            event.preventDefault();
+            const input = $('chat-user-input');
+            const message = input.value.trim();
+            if (!message) return;
+            input.value = '';
+            addChatMessage('user', escapeHtml(message));
+            const typing = addChatMessage('bot', '<span class="text-[#94A3B8]">Агент думает…</span>');
+            $('chat-send').disabled = true;
+            try {
+                const response = await api('/api/chat', {
+                    message,
+                    history: state.history.slice(-10),
+                    forecast_context: state.payload ? state.payload.summary : null
+                });
+                typing.innerHTML = renderMarkdown(response.answer);
+                state.history.push({ role: 'user', content: message }, { role: 'assistant', content: response.answer });
+                if (response.forecast) render(response.forecast);
+            } catch (error) {
+                typing.innerHTML = `<span class="text-rose-400">${escapeHtml(error.message)}</span>`;
+            } finally {
+                $('chat-send').disabled = false;
+                $('chat-messages-container').scrollTop = $('chat-messages-container').scrollHeight;
+            }
+        }
+
+        function clearChatHistory() {
+            document.querySelectorAll('#chat-messages-container .chat-msg').forEach(el => el.remove());
+            state.history = [];
+            showToast('Чат очищен');
+        }
+
+        async function copyText(text, message) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast(message);
+            } catch {
+                showToast('Не удалось скопировать в буфер обмена', false);
+            }
+        }
+
+        function copyChatContext() {
+            if (!state.payload) return;
+            const s = state.payload.summary;
+            const stats = s.turbines[`turbine_${state.turbine}`];
+            const text = stats
+                ? `NEXCEL Forecast: выпуск ${s.issue_date}, турбина ${state.turbine}, ${s.horizon_hours} ч, статус ${s.status}, средняя ${stats.mean_power} p.u., пик ${stats.peak_power} p.u. в ${fmtUtc(stats.peak_time_utc)} UTC`
+                : `NEXCEL Forecast: выпуск ${s.issue_date}, статус ${s.status}`;
+            copyText(text, 'Сводка скопирована');
+        }
+
+        function shareState() {
+            const url = new URL(location.href);
+            url.search = new URLSearchParams({ date: issueDateStr(), t: state.turbine, h: state.horizon }).toString();
+            copyText(url.toString(), 'Ссылка на состояние скопирована');
+        }
+
+        // ---------- export ----------
+        function exportForecast(format) {
+            if (!state.payload || !state.payload.points.length) return showToast('Нет данных для экспорта', false);
+            const s = state.payload.summary;
+            const points = state.payload.points.filter(p => p.turbine_id === state.turbine);
+            const base = `forecast_${s.issue_date}_turbine${state.turbine}_${s.horizon_hours}h`;
+            if (format === 'csv') {
+                const header = 'issue_date,target_time_utc,turbine_id,lead_hours,predicted_power_pu,wind_speed_100m,temperature_2m\n';
+                const rows = points.map(p => [s.issue_date, p.target_time, p.turbine_id, p.lead_hours, p.predicted_power, p.wind_speed_100m, p.temperature_2m].join(','));
+                downloadFile(header + rows.join('\n') + '\n', `${base}.csv`, 'text/csv');
+            } else {
+                downloadFile(JSON.stringify({ ...state.payload, points }, null, 2), `${base}.json`, 'application/json');
+            }
+            showToast(`Файл ${format.toUpperCase()} выгружен`);
+        }
+
+        function downloadFile(content, fileName, mimeType) {
+            const blob = new Blob([content], { type: `${mimeType};charset=utf-8;` });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function showToast(message, ok = true) {
+            const toast = $('toast-notify');
+            $('toast-icon').innerText = ok ? '✓' : '!';
+            $('toast-icon').className = `font-bold ${ok ? 'text-accentEmerald' : 'text-rose-500'}`;
+            $('toast-message').innerText = message;
+            toast.classList.remove('hidden');
+            clearTimeout(showToast.timer);
+            showToast.timer = setTimeout(() => toast.classList.add('hidden'), 2600);
+        }
+
+        // ---------- init ----------
+        window.addEventListener('DOMContentLoaded', async () => {
+            const params = new URLSearchParams(location.search);
+            if (params.get('t') === '2') state.turbine = 2;
+            if (params.get('h') === '24') state.horizon = 24;
+            if (params.get('date')) {
+                const offset = offsetFromDate(params.get('date'));
+                if (offset >= 0 && offset <= LAST_OFFSET) state.dayOffset = offset;
+            }
+            paintControls();
+            api('/api/status').then(st => {
+                $('weather-source').innerText = st.weather_source.toUpperCase().replace('ECMWF_IFS', 'ECMWF IFS');
+                $('llm-badge').innerText = st.llm_available ? 'LLM online' : 'LLM offline';
+                $('llm-badge').className = `text-[9px] font-mono-code font-semibold px-1.5 py-0.5 rounded border ${st.llm_available ? 'border-emerald-700 text-emerald-400' : 'border-[#252C36] text-[#94A3B8]'}`;
+            }).catch(() => {});
+            runForecast();
+        });
+
+        window.addEventListener('resize', () => {
+            const chartDiv = $('plotly-dual-chart');
+            if (chartDiv && window.Plotly) Plotly.Plots.resize(chartDiv);
+        });
+    </script>
+</body>
+</html>
